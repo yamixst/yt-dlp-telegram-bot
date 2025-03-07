@@ -1,0 +1,77 @@
+# Telegram Video Downloader Bot Configuration
+# Copy this file to config.toml and customize the settings
+
+[telegram]
+# Get your bot token from @BotFather on Telegram
+bot_token = "YOUR_BOT_TOKEN_HERE"
+
+# Maximum file size to send via Telegram (in MB)
+# Telegram has a 50MB limit for bots
+max_file_size_mb = 50
+
+# List of allowed chat IDs (leave empty to allow all users)
+# To find your chat ID, message your bot and check the logs
+# Example: [123456789, 987654321]
+allowed_chat_ids = []
+
+[download]
+# Directory inside container where downloads are stored
+output_dir = "/app/downloads"
+
+# Maximum video duration to allow (in minutes)
+max_duration_minutes = 60
+
+# Video quality preference for yt-dlp
+# Examples:
+# "best" - highest quality available
+# "worst" - lowest quality available
+# "best[height<=720]" - best quality up to 720p
+# "best[filesize<50M]" - best quality under 50MB
+# Note: Instagram uses optimized format handling regardless of this setting
+quality = "best[height<=720]"
+
+# Audio format for audio-only downloads
+audio_format = "mp3"
+
+# Video container format
+video_format = "mp4"
+
+# Automatically download videos shorter than this duration as video (in minutes)
+# Set to 0 to always show format selection
+auto_download_video_under_minutes = 10
+
+# Show download progress with file size updates
+show_download_progress = true
+
+# Update progress every N seconds (minimum 2 seconds to avoid rate limits)
+progress_update_interval_seconds = 3
+
+# Minimum file size change to trigger progress update (in KB)
+progress_update_threshold_kb = 512
+
+[supported_sites]
+youtube = true
+vimeo = true
+dailymotion = true
+twitch = true
+tiktok = true
+instagram = true
+twitter = true
+reddit = true
+
+[logging]
+# Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+level = "INFO"
+
+# Log message format
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+[limits]
+# Maximum number of concurrent downloads
+max_concurrent_downloads = 3
+
+# Download timeout in seconds (1 hour = 3600 seconds)
+download_timeout_seconds = 3600
+
+# Automatically cleanup downloaded files after X hours
+cleanup_after_hours = 24
