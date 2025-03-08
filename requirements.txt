@@ -1,0 +1,14 @@
+# Telegram Bot API
+python-telegram-bot==20.7
+
+# Configuration file parsing
+toml==0.10.2
+
+# Async file operations
+aiofiles==23.2.1
+
+# HTTP requests (if needed)
+requests==2.31.0
+
+# Additional utilities
+python-dateutil==2.8.2
