@@ -1,0 +1,33 @@
+services:
+  tg-yt-dlp:
+    build: .
+    container_name: tg-yt-dlp
+    restart: unless-stopped
+    volumes:
+      - ./downloads:/app/downloads
+      - ./config.toml:/app/config.toml:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - tg-bot-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os; exit(0 if os.path.exists('/app/app/bot.py') else 1)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  tg-bot-network:
+    driver: bridge
