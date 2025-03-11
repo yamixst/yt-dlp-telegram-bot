@@ -263,10 +263,7 @@ class VideoDownloader:
                         dots = "." * (update_count % 4)
 
                         try:
-                            await status_message.edit_text(
-                                f"⏬ Downloading{dots} {size_mb:.1f} MB",
-                                parse_mode='Markdown'
-                            )
+                            await status_message.edit_text(f"Downloading{dots} {size_mb:.1f} MB")
                         except Exception:
                             # Ignore telegram API errors (too many requests, etc)
                             pass
@@ -359,22 +356,22 @@ class TelegramBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
         if not self.is_chat_allowed(update.effective_chat.id):
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
+            await update.message.reply_text("Not authorized.")
             return
 
         welcome_text = (
-            "🎥 **Video Downloader Bot**\n\n"
-            "Send me a video URL and I'll download it for you!\n\n"
-            "**Supported sites:**\n"
+            "Video Downloader Bot\n\n"
+            "Send me a video URL.\n\n"
+            "Supported sites:\n"
         )
 
         for site, enabled in self.config['supported_sites'].items():
             if enabled:
-                welcome_text += f"✅ {site.title()}\n"
+                welcome_text += f"- {site.title()}\n"
 
-        welcome_text += "\n📝 Use /help for more information"
+        welcome_text += "\nUse /help for more information"
 
-        await update.message.reply_text(welcome_text, parse_mode='Markdown')
+        await update.message.reply_text(welcome_text)
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
@@ -384,35 +381,29 @@ class TelegramBot:
         auto_threshold = self.config['download'].get('auto_download_video_under_minutes', 0)
 
         help_text = (
-            "🔧 **How to use:**\n"
-            "1. Send me a video URL\n"
+            "How to use:\n"
+            "1. Send video URL\n"
         )
 
         if auto_threshold > 0:
-            help_text += f"2. Videos shorter than {auto_threshold} minutes are auto-downloaded as video\n"
-            help_text += "3. For longer videos, choose download format (video/audio)\n"
-            help_text += "4. Wait for download to complete\n\n"
+            help_text += f"2. Videos < {auto_threshold} min: auto-download as video\n"
+            help_text += "3. Longer videos: choose format\n"
         else:
-            help_text += "2. Choose download format (video/audio)\n"
-            help_text += "3. Wait for download to complete\n\n"
+            help_text += "2. Choose format (video/audio)\n"
 
         help_text += (
-            "📋 **Commands:**\n"
-            "/start - Start the bot\n"
-            "/help - Show this help\n"
-            "/status - Show current downloads\n"
-            "/cleanup - Clean up old files\n\n"
-            "📊 **Features:**\n"
-            "• Real-time download progress with file size\n"
-            "• Estimated file size before download\n"
-            "• Final file size after completion\n\n"
-            "⚙️ **Limits:**\n"
-            f"📁 Max file size: {self.config['telegram']['max_file_size_mb']}MB\n"
-            f"⏱️ Max duration: {self.config['download']['max_duration_minutes']} minutes\n"
-            f"🔄 Max concurrent: {self.config['limits']['max_concurrent_downloads']} downloads"
+            "\nCommands:\n"
+            "/start - Start\n"
+            "/help - Help\n"
+            "/status - Downloads\n"
+            "/cleanup - Clean files\n\n"
+            "Limits:\n"
+            f"Max size: {self.config['telegram']['max_file_size_mb']}MB\n"
+            f"Max duration: {self.config['download']['max_duration_minutes']} minutes\n"
+            f"Max concurrent: {self.config['limits']['max_concurrent_downloads']}"
         )
 
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await update.message.reply_text(help_text)
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
@@ -422,23 +413,23 @@ class TelegramBot:
         active = len(self.downloader.active_downloads)
 
         if active == 0:
-            await update.message.reply_text("📊 No active downloads")
+            await update.message.reply_text("No active downloads")
             return
 
-        status_text = f"📊 **Active downloads:** {active}\n\n"
+        status_text = f"Active downloads: {active}\n\n"
 
         for chat_id, info in self.downloader.active_downloads.items():
             elapsed = int(time.time() - info['start_time'])
-            status_text += f"🔄 Chat {chat_id}: {info['format']} ({elapsed}s)\n"
+            status_text += f"Chat {chat_id}: {info['format']} ({elapsed}s)\n"
 
-        await update.message.reply_text(status_text, parse_mode='Markdown')
+        await update.message.reply_text(status_text)
 
     async def cleanup_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /cleanup command"""
         if not self.is_chat_allowed(update.effective_chat.id):
             return
 
-        await update.message.reply_text("🧹 Starting cleanup...")
+        await update.message.reply_text("Starting cleanup...")
 
         try:
             old_count = len(list(self.downloader.download_dir.glob("*")))
@@ -446,15 +437,15 @@ class TelegramBot:
             new_count = len(list(self.downloader.download_dir.glob("*")))
             cleaned = old_count - new_count
 
-            await update.message.reply_text(f"✅ Cleanup completed! Removed {cleaned} old files.")
+            await update.message.reply_text(f"Cleanup completed. Removed {cleaned} files.")
         except Exception as e:
             self.logger.error(f"Cleanup command error: {e}")
-            await update.message.reply_text("❌ Cleanup failed. Check logs for details.")
+            await update.message.reply_text("Cleanup failed.")
 
     async def handle_url(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle URL messages"""
         if not self.is_chat_allowed(update.effective_chat.id):
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
+            await update.message.reply_text("Not authorized.")
             return
 
         url = update.message.text.strip()
@@ -462,40 +453,35 @@ class TelegramBot:
 
         # Check if URL is supported
         if not self.downloader.is_supported_url(url):
-            await update.message.reply_text(
-                "❌ This URL is not supported. Please check /help for supported sites."
-            )
+            await update.message.reply_text("URL not supported.")
             return
 
         # Check concurrent downloads limit
         if len(self.downloader.active_downloads) >= self.config['limits']['max_concurrent_downloads']:
-            await update.message.reply_text(
-                f"⏳ Maximum concurrent downloads ({self.config['limits']['max_concurrent_downloads']}) reached. Please wait."
-            )
+            await update.message.reply_text(f"Max downloads ({self.config['limits']['max_concurrent_downloads']}) reached.")
             return
 
         # Check if user already has active download
         if chat_id in self.downloader.active_downloads:
-            await update.message.reply_text("⏳ You already have an active download. Please wait for it to complete.")
+            await update.message.reply_text("Download in progress.")
             return
 
         # Get video info
-        status_message = await update.message.reply_text("🔍 Getting video information...")
+        status_message = await update.message.reply_text("Getting info...")
 
         video_info = await self.downloader.get_video_info(url)
-        
-        
+
+
 
         if not video_info:
-            await status_message.edit_text("❌ Could not get video information. Please check the URL.")
+            await status_message.edit_text("Could not get video info.")
             return
 
         # Check duration limit
         duration_minutes = video_info.get('duration', 0) / 60
         if duration_minutes > self.config['download']['max_duration_minutes']:
             await status_message.edit_text(
-                f"❌ Video is too long ({duration_minutes:.1f} minutes). "
-                f"Maximum allowed: {self.config['download']['max_duration_minutes']} minutes."
+                f"Video too long ({duration_minutes:.1f} min). Max: {self.config['download']['max_duration_minutes']} min."
             )
             return
 
@@ -506,16 +492,13 @@ class TelegramBot:
             # Auto-download as video for short videos
             size_info = ""
             if video_info.get('estimated_size_mb'):
-                size_info = f"📁 Estimated size: {video_info['estimated_size_mb']:.1f} MB\n"
+                size_info = f"Size: {video_info['estimated_size_mb']:.1f} MB\n"
 
             await status_message.edit_text(
-                f"🎥 **{video_info['title']}**\n\n"
-                f"👤 {video_info['uploader']}\n"
-                f"⏱️ Duration: {duration_minutes:.1f} minutes\n"
-                f"👁️ Views: {video_info.get('view_count', 'N/A')}\n"
-                f"{size_info}\n"
-                f"⏬ Auto-downloading as video (duration < {auto_download_threshold} min)...",
-                parse_mode='Markdown'
+                f"{video_info['title']}\n"
+                f"Duration: {duration_minutes:.1f} min\n"
+                f"{size_info}"
+                f"Downloading..."
             )
 
             # Start video download directly
@@ -523,12 +506,7 @@ class TelegramBot:
                 file_path = await self.downloader.download_video(url, chat_id, 'video', status_message)
 
                 if not file_path:
-                    error_msg = "❌ Download failed. This may happen if:\n"
-                    error_msg += "• The video is private or deleted\n"
-                    error_msg += "• The platform has restrictions\n"
-                    error_msg += "• The URL format is not supported\n\n"
-                    error_msg += "Try a different video or format."
-                    await status_message.edit_text(error_msg)
+                    await status_message.edit_text("Download failed.")
                     return
 
                 # Check file size
@@ -537,26 +515,23 @@ class TelegramBot:
 
                 if file_size > max_size:
                     await status_message.edit_text(
-                        f"❌ File too large ({file_size / 1024 / 1024:.1f}MB). "
-                        f"Maximum allowed: {self.config['telegram']['max_file_size_mb']}MB"
+                        f"File too large ({file_size / 1024 / 1024:.1f}MB). Max: {self.config['telegram']['max_file_size_mb']}MB"
                     )
-                    # Clean up file
                     os.unlink(file_path)
                     return
 
                 # Send file
-                await status_message.edit_text("📤 Uploading file...")
+                await status_message.edit_text("Uploading...")
 
                 with open(file_path, 'rb') as f:
                     await context.bot.send_video(
                         chat_id=chat_id,
-                        video=f,
-                        caption="🎥 Downloaded video"
+                        video=f
                     )
 
                 # Show final file size
                 final_size_mb = file_size / (1024 * 1024)
-                await status_message.edit_text(f"✅ Download completed! Final size: {final_size_mb:.1f} MB")
+                await status_message.edit_text(f"Completed. Size: {final_size_mb:.1f} MB")
 
                 # Clean up file
                 os.unlink(file_path)
@@ -566,34 +541,30 @@ class TelegramBot:
 
             except Exception as e:
                 self.logger.error(f"Auto-download error: {e}")
-                await status_message.edit_text("❌ Download failed. Please try again later.")
+                await status_message.edit_text("Download failed.")
         else:
             # Show video info and format options for longer videos
             size_info = ""
             if video_info.get('estimated_size_mb'):
-                size_info = f"📁 Estimated size: {video_info['estimated_size_mb']:.1f} MB\n"
+                size_info = f"Size: {video_info['estimated_size_mb']:.1f} MB\n"
 
             info_text = (
-                f"🎥 **{video_info['title']}**\n\n"
-                f"👤 {video_info['uploader']}\n"
-                f"⏱️ Duration: {duration_minutes:.1f} minutes\n"
-                f"👁️ Views: {video_info.get('view_count', 'N/A')}\n"
-                f"{size_info}\n"
-                f"{video_info['description']}"
+                f"{video_info['title']}\n"
+                f"Duration: {duration_minutes:.1f} min\n"
+                f"{size_info}"
             )
 
             keyboard = [
                 [
-                    InlineKeyboardButton("🎥 Video", callback_data=f"download_video_{url}"),
-                    InlineKeyboardButton("🎵 Audio", callback_data=f"download_audio_{url}")
+                    InlineKeyboardButton("Video", callback_data=f"download_video_{url}"),
+                    InlineKeyboardButton("Audio", callback_data=f"download_audio_{url}")
                 ],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
+                [InlineKeyboardButton("Cancel", callback_data="cancel")]
             ]
 
             await status_message.edit_text(
                 info_text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -602,7 +573,7 @@ class TelegramBot:
         await query.answer()
 
         if query.data == "cancel":
-            await query.edit_message_text("❌ Download cancelled.")
+            await query.edit_message_text("Cancelled.")
             return
 
         if not query.data.startswith("download_"):
@@ -617,18 +588,13 @@ class TelegramBot:
         chat_id = update.effective_chat.id
 
         # Start download
-        download_message = await query.edit_message_text(f"⏬ Starting {format_type} download...")
+        download_message = await query.edit_message_text(f"Starting {format_type} download...")
 
         try:
             file_path = await self.downloader.download_video(url, chat_id, format_type, download_message)
 
             if not file_path:
-                error_msg = "❌ Download failed. This may happen if:\n"
-                error_msg += "• The video is private or deleted\n"
-                error_msg += "• The platform has restrictions\n"
-                error_msg += "• The URL format is not supported\n\n"
-                error_msg += "Try a different video or format."
-                await query.edit_message_text(error_msg)
+                await download_message.edit_text("Download failed.")
                 return
 
             # Check file size
@@ -636,34 +602,30 @@ class TelegramBot:
             max_size = self.config['telegram']['max_file_size_mb'] * 1024 * 1024
 
             if file_size > max_size:
-                await query.edit_message_text(
-                    f"❌ File too large ({file_size / 1024 / 1024:.1f}MB). "
-                    f"Maximum allowed: {self.config['telegram']['max_file_size_mb']}MB"
+                await download_message.edit_text(
+                    f"File too large ({file_size / 1024 / 1024:.1f}MB). Max: {self.config['telegram']['max_file_size_mb']}MB"
                 )
-                # Clean up file
                 os.unlink(file_path)
                 return
 
             # Send file
             file_size_mb = file_size / (1024 * 1024)
-            await download_message.edit_text(f"📤 Uploading file ({file_size_mb:.1f} MB)...")
+            await download_message.edit_text(f"Uploading ({file_size_mb:.1f} MB)...")
 
             with open(file_path, 'rb') as f:
                 if format_type == 'audio':
                     await context.bot.send_audio(
                         chat_id=chat_id,
-                        audio=f,
-                        caption="🎵 Downloaded audio"
+                        audio=f
                     )
                 else:
                     await context.bot.send_video(
                         chat_id=chat_id,
-                        video=f,
-                        caption="🎥 Downloaded video"
+                        video=f
                     )
 
             # Show final file size in completion message
-            await download_message.edit_text(f"✅ Download completed! Final size: {file_size_mb:.1f} MB")
+            await download_message.edit_text(f"Completed. Size: {file_size_mb:.1f} MB")
 
             # Clean up file
             os.unlink(file_path)
@@ -673,7 +635,7 @@ class TelegramBot:
 
         except Exception as e:
             self.logger.error(f"Download error: {e}")
-            await download_message.edit_text("❌ Download failed. Please try again later.")
+            await download_message.edit_text("Download failed.")
 
     def cleanup_files(self):
         """Clean up old files on demand"""
