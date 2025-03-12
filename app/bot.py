@@ -7,11 +7,12 @@ import asyncio
 import logging
 import os
 import time
-import json
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
 import toml
+import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
@@ -22,6 +23,7 @@ class VideoDownloader:
         self.download_dir = Path(config['download']['output_dir'])
         self.download_dir.mkdir(parents=True, exist_ok=True)
         self.active_downloads = {}
+        self.progress_data = {}
 
         logging.basicConfig(
             format=config['logging']['format'],
@@ -52,99 +54,133 @@ class VideoDownloader:
         except:
             return False
 
+    def _progress_hook(self, d, chat_id):
+        """Progress hook for yt-dlp"""
+        if d['status'] == 'downloading':
+            self.progress_data[chat_id] = {
+                'downloaded_bytes': d.get('downloaded_bytes', 0),
+                'total_bytes': d.get('total_bytes') or d.get('total_bytes_estimate', 0),
+                'speed': d.get('speed', 0),
+                'eta': d.get('eta', 0)
+            }
+
     async def get_video_info(self, url):
         """Get video information using yt-dlp"""
-        try:
-            cmd = ['yt-dlp', '--dump-json', '--no-playlist', url]
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            stdout, stderr = await process.communicate()
+        def _extract_info():
+            try:
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'extract_flat': False,
+                }
 
-            if process.returncode != 0:
-                self.logger.error(f"yt-dlp info error: {stderr.decode()}")
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+            except Exception as e:
+                self.logger.error(f"Error getting video info: {e}")
                 return None
 
-            info = json.loads(stdout.decode())
-            duration = info.get('duration', 0)
-            filesize = info.get('filesize') or info.get('filesize_approx')
+        # Run in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        info = await loop.run_in_executor(None, _extract_info)
 
-            estimated_size_mb = None
-            if filesize:
-                estimated_size_mb = filesize / (1024 * 1024)
-            elif duration:
-                estimated_size_mb = duration / 60  # ~1MB per minute
-
-            return {
-                'title': info.get('title', 'Unknown'),
-                'duration': duration,
-                'uploader': info.get('uploader', 'Unknown'),
-                'estimated_size_mb': estimated_size_mb,
-            }
-        except Exception as e:
-            self.logger.error(f"Error getting video info: {e}")
+        if not info:
             return None
+
+        duration = info.get('duration', 0)
+        filesize = info.get('filesize') or info.get('filesize_approx')
+
+        estimated_size_mb = None
+        if filesize:
+            estimated_size_mb = filesize / (1024 * 1024)
+        elif duration:
+            estimated_size_mb = duration / 60  # ~1MB per minute
+
+        return {
+            'title': info.get('title', 'Unknown'),
+            'duration': duration,
+            'uploader': info.get('uploader', 'Unknown'),
+            'estimated_size_mb': estimated_size_mb,
+        }
 
     async def download_video(self, url, chat_id, format_type='video', status_message=None):
         """Download video using yt-dlp"""
+        def _download():
+            try:
+                timestamp = int(time.time())
+                output_template = str(self.download_dir / f"{chat_id}_{timestamp}_%(title)s.%(ext)s")
+
+                ydl_opts = {
+                    'outtmpl': output_template,
+                    'noplaylist': True,
+                    'nocheckcertificate': True,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'progress_hooks': [lambda d: self._progress_hook(d, chat_id)],
+                }
+
+                if format_type == 'audio':
+                    ydl_opts.update({
+                        'format': 'bestaudio',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': self.config['download']['audio_format'],
+                            'preferredquality': '0',
+                        }]
+                    })
+                else:
+                    ydl_opts.update({
+                        'format': f"{self.config['download']['quality']}/best/worst",
+                        'merge_output_format': self.config['download']['video_format'],
+                    })
+
+                self.logger.info(f"Starting download: {url}")
+                self.active_downloads[chat_id] = {'url': url, 'start_time': time.time(), 'format': format_type}
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+
+                # Find downloaded file
+                files = list(self.download_dir.glob(f"{chat_id}_{timestamp}_*"))
+                return str(files[0]) if files else None
+
+            except yt_dlp.DownloadError as e:
+                self.logger.error(f"Download error: {e}")
+                if "Requested format is not available" in str(e) and format_type == 'video':
+                    # Retry with simple format
+                    try:
+                        ydl_opts['format'] = 'best'
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            ydl.download([url])
+                        files = list(self.download_dir.glob(f"{chat_id}_{timestamp}_*"))
+                        return str(files[0]) if files else None
+                    except:
+                        return None
+                return None
+            except Exception as e:
+                self.logger.error(f"Download error: {e}")
+                return None
+            finally:
+                self.active_downloads.pop(chat_id, None)
+                self.progress_data.pop(chat_id, None)
+
         try:
-            timestamp = int(time.time())
-            output_template = str(self.download_dir / f"{chat_id}_{timestamp}_%(title)s.%(ext)s")
-
-            cmd = ['yt-dlp']
-
-            if format_type == 'audio':
-                cmd.extend([
-                    '--extract-audio',
-                    '--audio-format', self.config['download']['audio_format'],
-                    '--audio-quality', '0',
-                ])
-            else:
-                cmd.extend([
-                    '--format', f"{self.config['download']['quality']}/best/worst",
-                    '--merge-output-format', self.config['download']['video_format'],
-                ])
-
-            cmd.extend([
-                '--output', output_template,
-                '--no-playlist',
-                '--no-check-certificates',
-                url
-            ])
-
-            self.logger.info(f"Starting download: {' '.join(cmd)}")
-            self.active_downloads[chat_id] = {'url': url, 'start_time': time.time(), 'format': format_type}
-
             if status_message:
                 asyncio.create_task(self._monitor_progress(status_message, chat_id))
 
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            # Run download in thread pool
+            loop = asyncio.get_event_loop()
+            file_path = await asyncio.wait_for(
+                loop.run_in_executor(None, _download),
+                timeout=self.config['limits']['download_timeout_seconds']
+            )
 
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=self.config['limits']['download_timeout_seconds'])
-
-            self.active_downloads.pop(chat_id, None)
-
-            if process.returncode != 0:
-                error_msg = stderr.decode()
-                self.logger.error(f"Download error: {error_msg}")
-
-                # Retry with simple format
-                if "Requested format is not available" in error_msg and format_type == 'video':
-                    return await self._retry_simple(url, chat_id, output_template)
-                return None
-
-            # Find downloaded file
-            files = list(self.download_dir.glob(f"{chat_id}_{timestamp}_*"))
-            return str(files[0]) if files else None
+            return file_path
 
         except asyncio.TimeoutError:
             self.logger.error("Download timeout")
             self.active_downloads.pop(chat_id, None)
-            return None
-        except Exception as e:
-            self.logger.error(f"Download error: {e}")
-            self.active_downloads.pop(chat_id, None)
+            self.progress_data.pop(chat_id, None)
             return None
 
     async def _monitor_progress(self, status_message, chat_id):
@@ -153,48 +189,37 @@ class VideoDownloader:
             return
 
         try:
-            last_update = 0
             count = 0
             interval = self.config['download'].get('progress_update_interval_seconds', 3)
+            last_bytes = 0
 
             while chat_id in self.active_downloads:
                 await asyncio.sleep(interval)
-                files = list(self.download_dir.glob(f"{chat_id}_*"))
 
-                if files:
-                    current_file = max(files, key=lambda f: f.stat().st_size)
-                    size = current_file.stat().st_size
+                progress = self.progress_data.get(chat_id, {})
+                downloaded = progress.get('downloaded_bytes', 0)
 
-                    if size - last_update > 512 * 1024:  # 512KB threshold
-                        last_update = size
-                        count += 1
-                        dots = "." * (count % 4)
+                # Update only if significant change
+                if downloaded - last_bytes > 512 * 1024:  # 512KB threshold
+                    last_bytes = downloaded
+                    count += 1
+                    dots = "." * (count % 4)
 
-                        try:
-                            await status_message.edit_text(f"Downloading{dots} {size / 1024 / 1024:.1f} MB")
-                        except:
-                            pass
+                    size_mb = downloaded / (1024 * 1024)
+                    speed = progress.get('speed', 0)
+
+                    status_text = f"Downloading{dots} {size_mb:.1f} MB"
+                    if speed:
+                        speed_mb = speed / (1024 * 1024)
+                        status_text += f" ({speed_mb:.1f} MB/s)"
+
+                    try:
+                        await status_message.edit_text(status_text)
+                    except:
+                        pass
+
         except Exception as e:
             self.logger.error(f"Progress monitoring error: {e}")
-
-    async def _retry_simple(self, url, chat_id, output_template):
-        """Retry with simple format"""
-        try:
-            cmd = ['yt-dlp', '--format', 'best', '--output', output_template,
-                   '--no-playlist', '--no-check-certificates', url]
-
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=self.config['limits']['download_timeout_seconds'])
-
-            if process.returncode != 0:
-                return None
-
-            files = list(self.download_dir.glob(f"{chat_id}_*"))
-            return str(files[0]) if files else None
-        except:
-            return None
 
     def cleanup_old_files(self):
         """Clean up old files"""
