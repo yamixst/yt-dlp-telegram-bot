@@ -27,7 +27,6 @@ max_duration_minutes = 60
 # "worst" - lowest quality available
 # "best[height<=720]" - best quality up to 720p
 # "best[filesize<50M]" - best quality under 50MB
-# Note: Instagram uses optimized format handling regardless of this setting
 quality = "best[height<=720]"
 
 # Audio format for audio-only downloads
@@ -45,9 +44,6 @@ show_download_progress = true
 
 # Update progress every N seconds (minimum 2 seconds to avoid rate limits)
 progress_update_interval_seconds = 3
-
-# Minimum file size change to trigger progress update (in KB)
-progress_update_threshold_kb = 512
 
 [supported_sites]
 youtube = true
