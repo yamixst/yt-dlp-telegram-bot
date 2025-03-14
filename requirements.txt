@@ -3,3 +3,4 @@ toml
 aiofiles
 requests
 python-dateutil
+yt-dlp
