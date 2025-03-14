@@ -1,36 +1,27 @@
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    wget \
-    curl \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir yt-dlp
+RUN groupadd --system botuser && \
+    useradd --system --gid botuser botuser && \
+    mkdir -p /downloads && \
+    chown -R botuser:botuser /downloads
 
-# Copy requirements and install Python dependencies
+VOLUME ["/downloads", "/app/config.toml"]
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
-# Create downloads directory
-RUN mkdir -p /app/downloads
+COPY --chown=botuser:botuser app/*.py /app/
 
-# Copy application files
-COPY app/ ./app/
-COPY config.toml .
-
-# Create non-root user
-RUN useradd -m -u 1000 botuser && \
-    chown -R botuser:botuser /app
 USER botuser
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import os; exit(0 if os.path.exists('/app/app/bot.py') else 1)" || exit 1
-
-# Run the bot
-CMD ["python", "/app/app/bot.py"]
+CMD ["python", "bot.py"]

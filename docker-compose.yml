@@ -1,33 +1,13 @@
+version: "3.8"
+
 services:
-  tg-yt-dlp:
-    build: .
-    container_name: tg-yt-dlp
+  yt-dlp-telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yt-dlp-telegram-bot:latest
+    container_name: yt-dlp-telegram-bot
     restart: unless-stopped
     volumes:
-      - ./downloads:/app/downloads
+      - ./downloads:/downloads
       - ./config.toml:/app/config.toml:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-    networks:
-      - tg-bot-network
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import os; exit(0 if os.path.exists('/app/app/bot.py') else 1)",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-networks:
-  tg-bot-network:
-    driver: bridge
