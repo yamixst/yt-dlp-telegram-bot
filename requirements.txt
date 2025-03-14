@@ -1,6 +1,6 @@
-python-telegram-bot
-toml
 aiofiles
-requests
 python-dateutil
+python-telegram-bot
+requests
+toml
 yt-dlp
