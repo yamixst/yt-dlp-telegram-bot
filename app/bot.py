@@ -7,7 +7,6 @@ import asyncio
 import logging
 import os
 import time
-import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
