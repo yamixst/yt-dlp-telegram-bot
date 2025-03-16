@@ -3,6 +3,7 @@
 Telegram Bot for downloading videos using yt-dlp
 """
 
+import argparse
 import asyncio
 import logging
 import os
@@ -419,7 +420,18 @@ class TelegramBot:
 
 
 def main():
-    config_path = Path(__file__).parent.parent / "config.toml"
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Telegram Video Downloader Bot')
+    parser.add_argument('-c', '--config',
+                       default=Path(__file__).parent.parent / "config.toml",
+                       type=Path,
+                       help='Path to configuration file (default: config.toml)')
+    parser.add_argument('-d', '--downloads',
+                       type=Path,
+                       help='Downloads directory (overrides config file setting)')
+
+    args = parser.parse_args()
+    config_path = args.config
 
     if not config_path.exists():
         print(f"Error: Configuration file not found at {config_path}")
@@ -431,6 +443,10 @@ def main():
     except Exception as e:
         print(f"Error loading configuration: {e}")
         return 1
+
+    # Override downloads directory if specified via CLI
+    if args.downloads:
+        config['download']['output_dir'] = str(args.downloads)
 
     if not config.get('telegram', {}).get('bot_token'):
         print("Error: telegram.bot_token is required in config.toml")
