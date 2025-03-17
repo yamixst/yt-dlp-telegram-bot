@@ -24,4 +24,4 @@ COPY --chown=botuser:botuser app/*.py /app/
 
 USER botuser
 
-CMD ["python", "bot.py"]
+CMD ["python", "bot.py", "--config", "/app/config.toml", "--downloads", "/downloads"]
