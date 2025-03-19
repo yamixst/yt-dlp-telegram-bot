@@ -31,6 +31,26 @@ class VideoDownloader:
         )
         self.logger = logging.getLogger(__name__)
 
+        # Log proxy configuration
+        proxy_settings = self.config.get('proxy', {})
+        if proxy_settings.get('http_proxy') or proxy_settings.get('https_proxy'):
+            proxy_url = proxy_settings.get('http_proxy') or proxy_settings.get('https_proxy')
+            self.logger.info(f"Proxy configured: {proxy_url}")
+        else:
+            self.logger.info("No proxy configured")
+
+    def _get_proxy_config(self):
+        """Get proxy configuration for yt-dlp"""
+        proxy_config = {}
+        proxy_settings = self.config.get('proxy', {})
+
+        if proxy_settings.get('http_proxy'):
+            proxy_config['proxy'] = proxy_settings['http_proxy']
+        elif proxy_settings.get('https_proxy'):
+            proxy_config['proxy'] = proxy_settings['https_proxy']
+
+        return proxy_config
+
     def is_supported_url(self, url):
         """Check if URL is from supported site"""
         try:
@@ -73,6 +93,9 @@ class VideoDownloader:
                     'no_warnings': True,
                     'extract_flat': False,
                 }
+
+                # Add proxy configuration
+                ydl_opts.update(self._get_proxy_config())
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     return ydl.extract_info(url, download=False)
@@ -119,6 +142,9 @@ class VideoDownloader:
                     'progress_hooks': [lambda d: self._progress_hook(d, chat_id)],
                 }
 
+                # Add proxy configuration
+                ydl_opts.update(self._get_proxy_config())
+
                 if format_type == 'audio':
                     ydl_opts.update({
                         'format': 'bestaudio',
@@ -150,6 +176,8 @@ class VideoDownloader:
                     # Retry with simple format
                     try:
                         ydl_opts['format'] = 'best'
+                        # Ensure proxy config is still applied for retry
+                        ydl_opts.update(self._get_proxy_config())
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             ydl.download([url])
                         files = list(self.download_dir.glob(f"{chat_id}_{timestamp}_*"))

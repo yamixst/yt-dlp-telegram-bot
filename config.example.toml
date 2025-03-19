@@ -62,6 +62,18 @@ level = "INFO"
 # Log message format
 format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+[proxy]
+# Proxy settings for yt-dlp downloads
+# Leave empty to disable proxy
+http_proxy = ""
+https_proxy = ""
+
+# Examples:
+# HTTP/HTTPS proxy: "http://proxy.server.com:8080"
+# With authentication: "http://username:password@proxy.server.com:8080"
+# SOCKS5 proxy: "socks5://proxy.server.com:1080"
+# SOCKS5 with auth: "socks5://username:password@proxy.server.com:1080"
+
 [limits]
 # Maximum number of concurrent downloads
 max_concurrent_downloads = 3
