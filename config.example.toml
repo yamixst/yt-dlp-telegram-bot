@@ -16,7 +16,7 @@ allowed_chat_ids = []
 
 [download]
 # Directory inside container where downloads are stored
-output_dir = "/app/downloads"
+output_dir = "./downloads"
 
 # Maximum video duration to allow (in minutes)
 max_duration_minutes = 60
