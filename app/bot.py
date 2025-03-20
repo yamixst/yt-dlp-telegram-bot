@@ -129,6 +129,7 @@ class VideoDownloader:
             'duration': duration,
             'uploader': info.get('uploader', 'Unknown'),
             'estimated_size_mb': estimated_size_mb,
+            'description': info.get('description', ''),
         }
 
     async def download_video(self, url, chat_id, format_type='video', status_message=None):
@@ -448,6 +449,23 @@ class TelegramBot:
                     await context.bot.send_video(chat_id=chat_id, video=f)
 
             await message.edit_text(f"Completed. Size: {file_size_mb:.1f} MB")
+
+            # Send video description as separate message if available
+            video_info = await self.downloader.get_video_info(url)
+            if video_info and video_info.get('description'):
+                description = video_info['description'].strip()
+                if description:
+                    # Limit description length for Telegram
+                    max_description_length = 4000
+                    if len(description) > max_description_length:
+                        description = description[:max_description_length] + "..."
+
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"{description}",
+                        parse_mode='Markdown'
+                    )
+
             os.unlink(file_path)
             self.downloader.cleanup_old_files()
 
