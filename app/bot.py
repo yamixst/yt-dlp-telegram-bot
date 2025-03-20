@@ -132,6 +132,79 @@ class VideoDownloader:
             'description': info.get('description', ''),
         }
 
+    async def get_video_comments(self, url):
+        """Get video comments using yt-dlp"""
+        def _extract_comments():
+            try:
+                max_comments = self.config['download'].get('max_comments', 10)
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'writecomments': True,
+                    'writeinfojson': False,
+                    'skip_download': True,
+                    'extract_flat': False,
+                    'getcomments': True,
+                    'extractor_args': {
+                        'youtube': {
+                            'max_comments': [str(max_comments * 2)],  # Get a bit more than needed for sorting
+                            'comment_sort': ['top']
+                        }
+                    }
+                }
+
+                # Add proxy configuration
+                ydl_opts.update(self._get_proxy_config())
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    comments = info.get('comments', [])
+
+                    if not comments:
+                        return []
+
+                    # Sort comments based on configuration
+                    sort_method = self.config['download'].get('comments_sort', 'top')
+                    if sort_method == 'top':
+                        # Sort by like count (descending)
+                        comments.sort(key=lambda x: x.get('like_count', 0), reverse=True)
+                    elif sort_method == 'time':
+                        # Sort by timestamp (newest first)
+                        comments.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+                    elif sort_method == 'new':
+                        # Sort by timestamp (newest first) - same as time
+                        comments.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+
+                    # Limit number of comments (already limited by yt-dlp, but double-check)
+                    if max_comments > 0:
+                        comments = comments[:max_comments]
+
+                    # Format comments
+                    formatted_comments = []
+                    for comment in comments:
+                        author = comment.get('author', 'Unknown')
+                        text = comment.get('text', '')
+                        like_count = comment.get('like_count', 0)
+
+                        if text and text.strip():
+                            if like_count > 0:
+                                comment_text = f"{author} (👍 {like_count})\n{text.strip()}"
+                            else:
+                                comment_text = f"{author}\n{text.strip()}"
+                            formatted_comments.append(comment_text)
+
+                    return formatted_comments
+
+            except Exception as e:
+                self.logger.error(f"Error getting video comments: {e}")
+                return []
+
+        # Run in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        comments = await loop.run_in_executor(None, _extract_comments)
+        print(comments)
+        return comments
+
     async def download_video(self, url, chat_id, format_type='video', status_message=None):
         """Download video using yt-dlp"""
         def _download():
@@ -281,12 +354,14 @@ class TelegramBot:
         self.config = config
         self.downloader = VideoDownloader(config)
         self.logger = logging.getLogger(__name__)
+        self.last_video_urls = {}  # Store last video URL for each chat
 
         self.app = Application.builder().token(config['telegram']['bot_token']).build()
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(CommandHandler("status", self.status_command))
         self.app.add_handler(CommandHandler("cleanup", self.cleanup_command))
+        self.app.add_handler(CommandHandler("comments", self.comments_command))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_url))
         self.app.add_handler(CallbackQueryHandler(self.handle_callback))
 
@@ -316,7 +391,7 @@ class TelegramBot:
         else:
             help_text += "2. Choose format (video/audio)\n"
 
-        help_text += f"\nCommands:\n/start - Start\n/help - Help\n/status - Downloads\n/cleanup - Clean files\n\nLimits:\nMax size: {self.config['telegram']['max_file_size_mb']}MB\nMax duration: {self.config['download']['max_duration_minutes']} minutes\nMax concurrent: {self.config['limits']['max_concurrent_downloads']}"
+        help_text += f"\nCommands:\n/start - Start\n/help - Help\n/status - Downloads\n/cleanup - Clean files\n/comments - Get comments for last video\n\nLimits:\nMax size: {self.config['telegram']['max_file_size_mb']}MB\nMax duration: {self.config['download']['max_duration_minutes']} minutes\nMax concurrent: {self.config['limits']['max_concurrent_downloads']}"
 
         await update.message.reply_text(help_text)
 
@@ -349,6 +424,27 @@ class TelegramBot:
         except Exception as e:
             await update.message.reply_text("Cleanup failed.")
 
+    async def comments_command(self, update, context):
+        if not self.is_chat_allowed(update.effective_chat.id):
+            return
+
+        chat_id = update.effective_chat.id
+
+        # Check if we have a last video URL for this chat
+        if chat_id not in self.last_video_urls:
+            await update.message.reply_text("No recent video found. Send a video URL first.")
+            return
+
+        url = self.last_video_urls[chat_id]
+        status_message = await update.message.reply_text("Getting comments...")
+
+        try:
+            await self._send_comments(url, chat_id, context)
+            await status_message.edit_text("Comments sent!")
+        except Exception as e:
+            self.logger.error(f"Error getting comments: {e}")
+            await status_message.edit_text("Failed to get comments.")
+
     async def handle_url(self, update, context):
         if not self.is_chat_allowed(update.effective_chat.id):
             await update.message.reply_text("Not authorized.")
@@ -356,6 +452,9 @@ class TelegramBot:
 
         url = update.message.text.strip()
         chat_id = update.effective_chat.id
+
+        # Store the URL for potential comments command later
+        self.last_video_urls[chat_id] = url
 
         if not self.downloader.is_supported_url(url):
             await update.message.reply_text("URL not supported.")
@@ -397,6 +496,7 @@ class TelegramBot:
             keyboard = [
                 [InlineKeyboardButton("Video", callback_data=f"download_video_{url}"),
                  InlineKeyboardButton("Audio", callback_data=f"download_audio_{url}")],
+                [InlineKeyboardButton("Comments", callback_data=f"comments_{url}")],
                 [InlineKeyboardButton("Cancel", callback_data="cancel")]
             ]
 
@@ -410,18 +510,28 @@ class TelegramBot:
             await query.edit_message_text("Cancelled.")
             return
 
-        if not query.data.startswith("download_"):
-            return
+        if query.data.startswith("download_"):
+            parts = query.data.split("_", 2)
+            if len(parts) != 3:
+                return
 
-        parts = query.data.split("_", 2)
-        if len(parts) != 3:
-            return
+            format_type, url = parts[1], parts[2]
+            chat_id = update.effective_chat.id
 
-        format_type, url = parts[1], parts[2]
-        chat_id = update.effective_chat.id
+            download_message = await query.edit_message_text(f"Starting {format_type} download...")
+            await self._download_and_send(url, chat_id, format_type, download_message, context)
 
-        download_message = await query.edit_message_text(f"Starting {format_type} download...")
-        await self._download_and_send(url, chat_id, format_type, download_message, context)
+        elif query.data.startswith("comments_"):
+            parts = query.data.split("_", 1)
+            if len(parts) != 2:
+                return
+
+            url = parts[1]
+            chat_id = update.effective_chat.id
+
+            comments_message = await query.edit_message_text("Getting comments...")
+            await self._send_comments(url, chat_id, context)
+            await comments_message.edit_text("Comments sent!")
 
     async def _download_and_send(self, url, chat_id, format_type, message, context):
         """Download and send file"""
@@ -466,12 +576,39 @@ class TelegramBot:
                         parse_mode='Markdown'
                     )
 
+            # Send video comments if enabled
+            await self._send_comments(url, chat_id, context)
+
             os.unlink(file_path)
             self.downloader.cleanup_old_files()
 
         except Exception as e:
             self.logger.error(f"Download error: {e}")
             await message.edit_text("Download failed.")
+
+    async def _send_comments(self, url, chat_id, context):
+        """Send video comments as separate messages"""
+        try:
+            # Check if comments are enabled
+            if not self.config['download'].get('send_comments', False):
+                return
+
+            max_comments = self.config['download'].get('max_comments', 10)
+            if max_comments <= 0:
+                return
+
+            # Get comments
+            comments = await self.downloader.get_video_comments(url)
+            if not comments:
+                return
+
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text='\n\n'.join(comments)
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error sending comments: {e}")
 
     def run(self):
         self.logger.info("Starting Telegram bot...")

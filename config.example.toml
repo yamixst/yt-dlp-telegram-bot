@@ -50,6 +50,16 @@ progress_update_interval_seconds = 3
 # Higher values may improve speed but use more bandwidth and resources
 concurrent_fragments = 4
 
+# Comments settings
+# Whether to send video comments after downloading
+send_comments = true
+
+# Maximum number of comments to send (0 to disable comments)
+max_comments = 10
+
+# How to sort comments: "top", "time", "new"
+comments_sort = "top"
+
 [supported_sites]
 youtube = true
 vimeo = true
