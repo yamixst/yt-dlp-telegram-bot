@@ -97,6 +97,11 @@ class VideoDownloader:
                 # Add proxy configuration
                 ydl_opts.update(self._get_proxy_config())
 
+                # Add concurrent fragments configuration
+                concurrent_fragments = self.config['download'].get('concurrent_fragments', 1)
+                if concurrent_fragments > 1:
+                    ydl_opts['concurrent_fragment_downloads'] = concurrent_fragments
+
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     return ydl.extract_info(url, download=False)
             except Exception as e:
@@ -145,6 +150,11 @@ class VideoDownloader:
                 # Add proxy configuration
                 ydl_opts.update(self._get_proxy_config())
 
+                # Add concurrent fragments configuration
+                concurrent_fragments = self.config['download'].get('concurrent_fragments', 1)
+                if concurrent_fragments > 1:
+                    ydl_opts['concurrent_fragment_downloads'] = concurrent_fragments
+
                 if format_type == 'audio':
                     ydl_opts.update({
                         'format': 'bestaudio',
@@ -178,6 +188,10 @@ class VideoDownloader:
                         ydl_opts['format'] = 'best'
                         # Ensure proxy config is still applied for retry
                         ydl_opts.update(self._get_proxy_config())
+                        # Ensure concurrent fragments config is still applied for retry
+                        concurrent_fragments = self.config['download'].get('concurrent_fragments', 1)
+                        if concurrent_fragments > 1:
+                            ydl_opts['concurrent_fragment_downloads'] = concurrent_fragments
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             ydl.download([url])
                         files = list(self.download_dir.glob(f"{chat_id}_{timestamp}_*"))

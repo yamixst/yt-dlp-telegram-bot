@@ -45,6 +45,11 @@ show_download_progress = true
 # Update progress every N seconds (minimum 2 seconds to avoid rate limits)
 progress_update_interval_seconds = 3
 
+# Number of fragments to download concurrently (speeds up downloads)
+# Set to 1 to disable concurrent fragment downloading
+# Higher values may improve speed but use more bandwidth and resources
+concurrent_fragments = 4
+
 [supported_sites]
 youtube = true
 vimeo = true
